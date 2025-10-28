@@ -75,11 +75,7 @@ library(karyoploteR)
 library(cowplot)
 library(geneviewer)
 library(RColorBrewer)
-setwd("~/Documents/Shedd/acer_analysis")
-acer<-geneviewer::read_bed("acerroh.track.bed")
-df<-acer%>%
-  mutate(indv = str_extract(blockCount
-                            , '(?<=Ind: )[A-Za-z0-9_-]+'))
+
 ```
 
 ```{r colors}
@@ -99,8 +95,8 @@ custom_colors<-c("Aruba/Curacao"= "#04A2A0", "Belize/MX"="#AA36A5", "FL"="#EE962
 
 #This has added in the individual from the tracks so i can identify the populations.
 
-setwd("~/Documents/Shedd/acer_analysis")
-acer<-geneviewer::read_bed("acerroh.track.bed")
+#setwd("~/Documents/Shedd/acer_analysis")
+acer<-geneviewer::read_bed("../data/acerroh.track.bed")
 
 #add in indv column 
 df<-acer%>%
@@ -108,7 +104,7 @@ df<-acer%>%
                             , '(?<=Ind: )[A-Za-z0-9_-]+'))
 
 ##load in population metadata 
-pop<-read.table("popfile_2.txt", header=TRUE)
+pop<-read.table("../data/popfile_2.txt", header=TRUE)
 
 #combine in  population data 
 
@@ -124,7 +120,8 @@ df3<-df2%>%
 
 
 ```{r recomb}
-map<-read.table("Acervicornis_SEXAVG_sanger.map")
+
+map<-read.table("../data/Acervicornis_SEXAVG_sanger.map")
 colnames(map)[1]<-"chrom"
 colnames(map)[2]<-"snpid"
 colnames(map)[3]<-"genomic position (cM)"
@@ -192,7 +189,7 @@ cowplot::plot_grid(g200, g100)
 the length of ROH at 25 generations according to the paper (Kyriazis et al 2025) is 228944	(~200 kb) -- we are going to analyze using this value as well as 100 kb for flexibility 
 
 ```{r idrisk}
-setwd("~/Documents/Shedd/acer_analysis")
+#setwd("~/Documents/Shedd/acer_analysis")
 #Try and calculate 
 #the non-ROH heterozygosity values were calculated by filtering the vcf by removing regions in the roh file, when filtered by only fragments greater than 10kb, 50kb, and 100kb 
 
@@ -207,6 +204,8 @@ df3100<-df2%>%
 #filter out any ROH shorter than 200kb 
 df3200<-df2%>%
   filter(score>=200000)
+df3500<-df2%>%
+  filter(score>=500000)
 ggplot(df3200, aes(x=score, y=pop, fill=pop))+geom_violin()+geom_point()+xlab("ROH Length (bp)")+
   ggtitle("Length of Runs of Homozygosity (Runs > 200 kb)")+ylab("Sampling Location")+scale_fill_manual(values=custom_colors, labels=c("CUR/ARU", "BEL/MX", "DRT/FLL/FLU", "JAM/DOM", "PAN"))+labs(fill="Population")+scale_y_discrete(labels=c("CUR/ARU", "BEL/MX", "DRT/FLL/FLU", "JAM/DOM", "PAN"))
 
@@ -230,7 +229,7 @@ FROH100$limit_kb<-'100'
 #FROH<-rbind(FROH100,FROH200)
 
 #calculate non ROH het 
-nonroh100<-read.table("full.panel100kb.het.het", header=TRUE)
+nonroh100<-read.table("../data/full.panel100kb.het.het", header=TRUE)
 #nonroh200<-full.panel200kb.het
 
 colnames(nonroh100)[1]<-"indv"
@@ -274,7 +273,27 @@ ggplot(idrisk100, aes(x=pop.x,y=idrisk, fill=pop.x))+geom_violin()+geom_point()+
 #plot some of the genomic ranges to see if there are shared runs across populations 
 
 
+roh_plot <- df3200 %>%
+  mutate(length = chromEnd - chromStart) %>%
+  arrange(pop, indv) %>%
+  mutate(indv_id = as.numeric(factor(indv, levels = unique(indv))))%>%
+  filter(chrom=="chrOZ035968.1")
 
+ggplot(roh_plot, aes(xmin = chromStart/1e6, xmax = chromEnd/1e6, 
+                      ymin = indv_id - 0.4,
+                      ymax = indv_id + 0.4,
+                      fill = pop)) +
+  geom_rect() +
+  #facet_wrap(~chrom, scales = "free_x", ncol = 3) +
+  scale_fill_manual(values=custom_colors, labels=c("CUR/ARU", "BEL/MX", "DRT/FLL/FLU", "JAM/DOM", "PAN")) +
+  labs(title = "Runs of Homozygosity Chromosome chrOZ035968.1",
+       x = "Position (Mb)",
+       fill = "Population") +
+  theme_minimal(base_size = 12) +
+  theme(axis.text.y = element_text(size = 8),
+        axis.ticks.x = element_blank(),
+        strip.background = element_rect(fill = "grey90", color = NA),
+        strip.text = element_text(face = "bold"))
 
 
 
