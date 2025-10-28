@@ -174,10 +174,10 @@ gen100<-df_recomb%>%
 gen100
 
 
-g200<-ggplot(df_recomb, aes(x=g, y=score))+geom_point()+theme_bw()+xlab("Generations to Last Ancestor")+ylab("Length of Run of Homozygosity in bp")+annotate("rect", xmin=0, xmax=25, ymin=0, ymax=Inf, fill = "palegreen", alpha = 0.4)+geom_text(aes(40,4e05,label = '25 Generations',hjust=-0.1))+geom_text(aes(1500, 8e05, label='Minimum 200kb long Runs', hjust=0.4))
+g200<-ggplot(df_recomb, aes(x=g, y=score))+geom_point()+theme_bw()+xlab("Generations to LCA for ROH")+ylab("Length of Run of Homozygosity in bp")+annotate("rect", xmin=0, xmax=25, ymin=0, ymax=Inf, fill = "palegreen", alpha = 0.4)+geom_text(aes(40,4e05,label = '25 Generations',hjust=-0.1))+geom_text(aes(1500, 8e05, label='Minimum 200kb long Runs', hjust=0.4))
 
 
-g100<-ggplot(df_recomb, aes(x=g, y=score))+geom_point()+theme_bw()+geom_vline(xintercept=25, color="red")+annotate("rect", xmin=0, xmax=192, ymin=0, ymax=Inf, fill="palegreen", alpha=0.4)+xlab("Generations to Last Ancestor")+ylab("Length of Run of Homozygosity in bp")+geom_text(aes(210,4e05,label = '192 generations',hjust=-0.1))+geom_text(aes(1500, 8e05, label='Minimum 100kb long Runs', hjust=0.4))
+g100<-ggplot(df_recomb, aes(x=g, y=score))+geom_point()+theme_bw()+geom_vline(xintercept=25, color="red")+annotate("rect", xmin=0, xmax=192, ymin=0, ymax=Inf, fill="palegreen", alpha=0.4)+xlab("Generations to LCA for ROH")+ylab("Length of Run of Homozygosity in bp")+geom_text(aes(210,4e05,label = '192 generations',hjust=-0.1))+geom_text(aes(1500, 8e05, label='Minimum 100kb long Runs', hjust=0.4))
 
 #plotgrid
 cowplot::plot_grid(g200, g100)
