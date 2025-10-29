@@ -1,0 +1,312 @@
+---
+ntitle: Analysis of Runs of Homozgyosity in Acropora cervicornis
+author: "Trinity Conn"
+date: "2025-10-28"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Analysis of Runs of Homozygosity (ROH) in Acropora cervicornis
+
+```{bash eval=F}
+#These analyses were produced using the following bash code: 
+
+
+#!/bin/bash
+#SBATCH --job-name=garlic
+#SBATCH --account=ckenkel_26
+#SBATCH --partition=epyc-64
+#SBATCH --nodes=1
+#SBATCH --ntasks=20
+#SBATCH --mem=100gb
+#SBATCH --time=40:00:00
+#SBATCH -o garlic.out
+#SBATCH -e garlic.error
+
+#set up environment 
+source ~/.bashrc
+conda activate garlic 
+module load rclone
+cd /scratch1/tlc_975 
+
+#define variables 
+TPED="acerroh.tped"
+TFAM="acerroh.tfam"
+CENT="cent2.file"
+
+
+#run garlic 
+/home1/tlc_975/linux/garlic --tped $TPED --tfam $TFAM --centromere $CENT --error 0.001 --auto-winsize --winsize 10 --auto-overlap-frac --tped-missing . --gl-type GQ --resample 30$
+```
+
+```{bash, eval=F}
+
+###Calculate non-ROH heterozygosity 
+
+awk '($3 - $2) >= 200000' acerroh.roh.bed > acerroh.roh200kb.bed
+awk '($3 - $2) >= 100000' acerroh.roh.bed > acerroh.roh100kb.bed
+
+bedtools intersect -a /project2/ckenkel_26/Acer_WGS/vcfs/Sep2025_morePAN/full.panel_5bpind.morePAN.HWE.DPqual.AC3.bi.SOR.vcf.gz -b acerroh.roh100kb.bed -v -header > full.panel_nnonroh100kb.vcf
+
+bedtools intersect -a /project2/ckenkel_26/Acer_WGS/vcfs/Sep2025_morePAN/full.panel_5bpind.morePAN.HWE.DPqual.AC3.bi.SOR.vcf.gz -b acerroh.roh200kb.bed -v -header > full.panel_nonroh200kb.vcf
+
+bgzip full.panel_nonroh100kb.vcf
+bgzip full.panel_nonroh50kb.vcf
+bgzip full.panel_nonroh200kb.vcf
+
+vcftools --gzvcf full.panel_nonroh100kb.vcf.gz --het --out full.panel100kb.het
+vcftools --gzvcf full.panel_nonroh50kb.vcf.gz --het --out full.panel50kb.het
+vcftools --vcf full.panel_nonroh200kb.vcf --het --out full.panel200kb.het
+
+```
+
+```{r packages}
+##load in required packages 
+library(rtracklayer)
+library(GenomicRanges)
+library(tidyverse)
+library(plyranges)
+library(karyoploteR)
+library(cowplot)
+library(geneviewer)
+library(RColorBrewer)
+
+```
+
+```{r colors}
+custom_colors<-c("Aruba/Curacao"= "#04A2A0", "Belize/MX"="#AA36A5", "FL"="#EE962F", "JAM/DR"="#C6CF18", "PAN"="#4E66C2")
+
+```
+
+```{r load in files}
+
+##load in bed file -- this is the output of the regions of runs of hom from garlic, and I have modified it using the awk script :
+#"awk '
+#BEGIN { track_line = "" }
+#/^track/ { track_line = $0; next }
+#/^browser/ { next }
+#{ print $0 "\t" track_line }
+#' acerroh.roh.bed > acerroh.track.bed" 
+
+#This has added in the individual from the tracks so i can identify the populations.
+
+#setwd("~/Documents/Shedd/acer_analysis")
+acer<-geneviewer::read_bed("../data/acerroh.track.bed")
+
+#add in indv column 
+df<-acer%>%
+  mutate(indv = str_extract(blockCount
+                            , '(?<=Ind: )[A-Za-z0-9_-]+'))
+
+##load in population metadata 
+pop<-read.table("../data/popfile_2.txt", header=TRUE)
+
+#combine in  population data 
+
+df2<-merge(df, pop, by=c("indv"))
+df2<-df2%>%
+  select("chrom", "indv", "pop", "chromStart", "chromEnd", "name", "score")
+
+df3<-df2%>%
+  filter(score>=10000)
+
+
+```
+
+
+```{r recomb}
+
+map<-read.table("../data/Acervicornis_SEXAVG_sanger.map")
+colnames(map)[1]<-"chrom"
+colnames(map)[2]<-"snpid"
+colnames(map)[3]<-"genomic position (cM)"
+colnames(map)[4]<-"snp position (bp)"
+
+#calculate recombination rate in cM/Mb
+
+map<-map%>%
+  filter(`snp position (bp)`!=0)%>%
+  mutate(rate=`genomic position (cM)`/(`snp position (bp)`))
+
+mapsum<-map%>%
+  group_by(chrom)%>%
+  summarize(mean=mean(rate))
+
+#translate ROH length in bp to length in cm 
+
+#score is the length of the ROH in bp, if you you have x cm / bp to get position in centimorgans
+#multiply the length (score) by the mean recombination rate per chromosome 
+
+mapsum$chrom<-paste0("chr",mapsum$chrom)
+df_recomb<-full_join(mapsum, df3, by=c("chrom"))
+
+
+df_recomb<-df_recomb%>%
+  mutate(scoretest=10000000*score)
+df_recomb<-df_recomb%>%
+  mutate(cM=score*mean)
+
+#estimate generations 
+
+df_recomb<-df_recomb%>%
+  mutate(g=(100/(2*cM)))
+
+#years, generation time 5 years?
+
+df_recomb<-df_recomb%>%
+  mutate(yr=g*5)
+
+#identifying min length for 25 generations or sooner
+gen25<-df_recomb%>%
+  filter(g<=25)%>%
+  summarise(min(score))
+gen25
+
+#identify number of generations associated with min 100kb
+gen100<-df_recomb%>%
+  filter(score>=100000)%>%
+  summarise(max(g))
+gen100
+
+
+g200<-ggplot(df_recomb, aes(x=g, y=score))+geom_point()+theme_bw()+xlab("Generations to LCA for ROH")+ylab("Length of Run of Homozygosity in bp")+annotate("rect", xmin=0, xmax=25, ymin=0, ymax=Inf, fill = "palegreen", alpha = 0.4)+geom_text(aes(40,4e05,label = '25 Generations',hjust=-0.1))+geom_text(aes(1500, 8e05, label='Minimum 200kb long Runs', hjust=0.4))
+
+
+g100<-ggplot(df_recomb, aes(x=g, y=score))+geom_point()+theme_bw()+geom_vline(xintercept=25, color="red")+annotate("rect", xmin=0, xmax=192, ymin=0, ymax=Inf, fill="palegreen", alpha=0.4)+xlab("Generations to LCA for ROH")+ylab("Length of Run of Homozygosity in bp")+geom_text(aes(210,4e05,label = '192 generations',hjust=-0.1))+geom_text(aes(1500, 8e05, label='Minimum 100kb long Runs', hjust=0.4))
+
+#plotgrid
+cowplot::plot_grid(g200, g100)
+
+#The appropriately 'long' ROH is <25 generations 
+#the length of ROH at 25 generations according to the paper (Kyriazis et al 2025) is 228944	(~200 kb) -- we are going to analyze using this value as well as 100 kb for flexibility 
+
+```
+the length of ROH at 25 generations according to the paper (Kyriazis et al 2025) is 228944	(~200 kb) -- we are going to analyze using this value as well as 100 kb for flexibility 
+
+```{r idrisk}
+#setwd("~/Documents/Shedd/acer_analysis")
+#Try and calculate 
+#the non-ROH heterozygosity values were calculated by filtering the vcf by removing regions in the roh file, when filtered by only fragments greater than 10kb, 50kb, and 100kb 
+
+
+#calculate FROH  200 kb & 100 kb 
+genomesize<-328680610
+genomesizekb<-genomesize/1000
+
+#filter out any ROH shorter than 100kb 
+df3100<-df2%>%
+  filter(score>=100000)
+#filter out any ROH shorter than 200kb 
+df3200<-df2%>%
+  filter(score>=200000)
+df3500<-df2%>%
+  filter(score>=500000)
+ggplot(df3200, aes(x=score, y=pop, fill=pop))+geom_violin()+geom_point()+xlab("ROH Length (bp)")+
+  ggtitle("Length of Runs of Homozygosity (Runs > 200 kb)")+ylab("Sampling Location")+scale_fill_manual(values=custom_colors, labels=c("CUR/ARU", "BEL/MX", "DRT/FLL/FLU", "JAM/DOM", "PAN"))+labs(fill="Population")+scale_y_discrete(labels=c("CUR/ARU", "BEL/MX", "DRT/FLL/FLU", "JAM/DOM", "PAN"))+theme_bw()
+
+#calculate FROH 
+
+FROH100<-df3100%>%
+  group_by(indv)%>%
+  mutate(totalRoh=sum(score))%>%
+  mutate(FROH=totalRoh/genomesize)%>%
+  distinct(indv, .keep_all = TRUE)%>%
+  dplyr::select(c('indv', 'pop', 'totalRoh', 'FROH'))
+FROH100$limit_kb<-'100'
+
+FROH200<-df3200%>%
+  group_by(indv)%>%
+  mutate(totalRoh=sum(score))%>%
+  mutate(FROH=totalRoh/genomesize)%>%
+  distinct(indv, .keep_all = TRUE)%>%
+  dplyr::select(c('indv', 'pop', 'totalRoh', 'FROH'))
+FROH200$limit_kb<-'200'
+#FROH<-rbind(FROH100,FROH200)
+
+#calculate non ROH het 
+nonroh100<-read.table("../data/full.panel100kb.het.het", header=TRUE)
+nonroh200<-read.table("../data/full.panel200kb.het.het", header=TRUE)
+
+colnames(nonroh100)[1]<-"indv"
+colnames(nonroh200)[1]<-"indv"
+roh100<-merge(nonroh100,pop, by=c('indv'))
+roh200<-merge(nonroh200,pop, by=c('indv'))
+
+roh100<-roh100%>%
+  mutate(nsiteskb=N_SITES/1000)
+roh100<-roh100%>%
+  mutate(heto=(N_SITES-O.HOM.)/genomesizekb)
+
+roh200<-roh200%>%
+  mutate(nsiteskb=N_SITES/1000)
+roh200<-roh200%>%
+  mutate(heto=(N_SITES-O.HOM.)/genomesizekb)
+#calculate IDRisk
+
+#IDrisk min 100kb
+idrisk100<-merge(roh100, FROH100, by=c("indv"))
+idrisk100<-idrisk100%>%
+  mutate(idrisk=heto*FROH)
+idrisk200<-merge(roh200, FROH200, by=c("indv"))
+idrisk200<-idrisk200%>%
+  mutate(idrisk=heto*FROH)
+head(idrisk100)
+
+
+ggplot(idrisk100, aes(x=pop.x,y=idrisk, fill=pop.x))+geom_violin()+geom_point()+theme_bw()+
+  geom_hline(yintercept = 0.25, color = "orange", linetype = "dashed")+
+  geom_hline(yintercept=0.5, color='red', linetype='solid')+geom_hline(yintercept=0.05, color='green', linetype='dashed')+
+  ylim(0,0.55)+ylab("IDrisk=FROH*non-ROH Heterozygosity\n(Runs Longer Than 100kb)")+xlab("")+scale_fill_manual(values=custom_colors, labels=c("CUR/ARU", "BEL/MX", "DRT/FLL/FLU", "JAM/DOM", "PAN"))+labs(fill="Population (K=5, Post-hoc)")+
+  theme(axis.text.x = element_blank())+geom_text(aes(0,0.27,label = 'High Risk',hjust=-0.1))+geom_text(aes(0,0.07,label = 'Moderate Risk', hjust=-0.1))+geom_text(aes(0,0.52,label = 'Extreme Risk', hjust=-0.1))
+
+ggplot(idrisk200, aes(x=pop.x,y=idrisk, fill=pop.x))+geom_violin()+geom_point()+theme_bw()+
+  geom_hline(yintercept = 0.25, color = "orange", linetype = "dashed")+
+  geom_hline(yintercept=0.5, color='red', linetype='solid')+geom_hline(yintercept=0.05, color='green', linetype='dashed')+
+  ylim(0,0.55)+ylab("IDrisk=FROH*non-ROH Heterozygosity\n(Runs Longer Than 200kb)")+xlab("")+scale_fill_manual(values=custom_colors, labels=c("CUR/ARU", "BEL/MX", "DRT/FLL/FLU", "JAM/DOM", "PAN"))+labs(fill="Population (K=5, Post-hoc)")+
+  theme(axis.text.x = element_blank())+geom_text(aes(0,0.27,label = 'High Risk',hjust=-0.1))+geom_text(aes(0,0.07,label = 'Moderate Risk', hjust=-0.1))+geom_text(aes(0,0.52,label = 'Extreme Risk', hjust=-0.1))
+
+#ggplot(average, aes(x=meanFROH, y=meanhet, color=pop.x))+geom_point(size=3)+
+  #scale_color_manual(values=custom_colors, labels=c("CUR/ARU", "BEL/MX", "DRT/FLL/FLU", "JAM/DOM", #"PAN"))+labs(color="Population")+
+ # theme_bw()+scale_x_discrete(labels=c("CUR/ARU", "BEL/MX", "DRT/FLL/FLU", "JAM/DOM", "PAN"))
+
+
+
+
+```
+
+```{r granges}
+
+#plot some of the genomic ranges to see if there are shared runs across populations 
+
+
+roh_plot <- df3200 %>%
+  mutate(length = chromEnd - chromStart) %>%
+  arrange(pop, indv) %>%
+  mutate(indv_id = as.numeric(factor(indv, levels = unique(indv))))%>%
+  filter(chrom=="chrOZ035968.1")
+
+ggplot(roh_plot, aes(xmin = chromStart/1e6, xmax = chromEnd/1e6, 
+                      ymin = indv_id - 0.4,
+                      ymax = indv_id + 0.4,
+                      fill = pop)) +
+  geom_rect() +
+  #facet_wrap(~chrom, scales = "free_x", ncol = 3) +
+  scale_fill_manual(values=custom_colors, labels=c("CUR/ARU", "BEL/MX", "DRT/FLL/FLU", "JAM/DOM", "PAN")) +
+  labs(title = "Runs of Homozygosity Chromosome chrOZ035968.1",
+       x = "Position (Mb)",
+       fill = "Population") +
+  theme_minimal(base_size = 12) +
+  theme(axis.text.y = element_text(size = 8),
+        axis.ticks.x = element_blank(),
+        strip.background = element_rect(fill = "grey90", color = NA),
+        strip.text = element_text(face = "bold"))
+
+
+
+
+```
