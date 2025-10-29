@@ -209,6 +209,10 @@ df3500<-df2%>%
 ggplot(df3200, aes(x=score, y=pop, fill=pop))+geom_violin()+geom_point()+xlab("ROH Length (bp)")+
   ggtitle("Length of Runs of Homozygosity (Runs > 200 kb)")+ylab("Sampling Location")+scale_fill_manual(values=custom_colors, labels=c("CUR/ARU", "BEL/MX", "DRT/FLL/FLU", "JAM/DOM", "PAN"))+labs(fill="Population")+scale_y_discrete(labels=c("CUR/ARU", "BEL/MX", "DRT/FLL/FLU", "JAM/DOM", "PAN"))+theme_bw()
 
+ggplot(df3100, aes(x=score, y=pop, fill=pop))+geom_violin()+geom_point()+xlab("ROH Length (bp)")+
+  ggtitle("Length of Runs of Homozygosity (Runs > 100 kb)")+ylab("Sampling Location")+scale_fill_manual(values=custom_colors, labels=c("CUR/ARU", "BEL/MX", "DRT/FLL/FLU", "JAM/DOM", "PAN"))+labs(fill="Population")+scale_y_discrete(labels=c("CUR/ARU", "BEL/MX", "DRT/FLL/FLU", "JAM/DOM", "PAN"))+theme_bw()
+
+
 #calculate FROH 
 
 FROH100<-df3100%>%
